@@ -1,0 +1,1589 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Контроль Квитків — QR Сканер UUID</title>
+
+  <!-- Підключення Tailwind CSS для сучасного адаптивного інтерфейсу -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Підключення бібліотеки сканування QR-кодів через камеру -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <!-- Підключення бібліотеки генерації QR-кодів для попереднього перегляду квитків -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <!-- Шрифти Inter та JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    /* Плавна поява карток результату */
+    @keyframes popIn {
+      0% {
+        opacity: 0;
+        transform: translateY(10px) scale(0.98);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    .animate-pop-in {
+      animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* Коригування стилів контейнера відеопотоку html5-qrcode */
+    #qr-reader {
+      border: none !important;
+      width: 100% !important;
+    }
+    #qr-reader video {
+      border-radius: 0.75rem !important;
+      object-fit: cover !important;
+      width: 100% !important;
+    }
+    #qr-reader__dashboard_section_csr span,
+    #qr-reader__dashboard_section_swaplink {
+      display: none !important;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-900 font-sans antialiased min-h-screen flex flex-col overflow-x-hidden selection:bg-indigo-600 selection:text-white">
+
+  <!-- ==================== ВЕРХНЯ ПАНЕЛЬ (HEADER + СТАТИСТИКА) ==================== -->
+  <header class="bg-slate-900 text-white shadow-lg sticky top-0 z-30">
+    <div class="max-w-2xl mx-auto px-4 pt-3.5 pb-3">
+      <!-- Рядок заголовка та кнопки звуку -->
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0 shadow-inner">
+            <!-- Іконка QR-сканера -->
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2m10 0h2a2 2 0 012 2v2m0 10v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M7 12h10" />
+            </svg>
+          </div>
+          <div class="min-w-0">
+            <h1 class="text-base sm:text-lg font-extrabold tracking-tight truncate">Контроль Квитків</h1>
+            <p id="db-source-label" class="text-xs text-slate-400 truncate">Завантаження бази...</p>
+          </div>
+        </div>
+
+        <!-- Кнопка увімкнення/вимкнення звуку -->
+        <button
+          id="btn-toggle-sound"
+          type="button"
+          onclick="toggleSound()"
+          title="Звукові сигнали"
+          class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 transition flex items-center gap-1.5 text-xs font-medium text-slate-200 border border-slate-700 shrink-0"
+        >
+          <span id="sound-icon-on">
+            <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+            </svg>
+          </span>
+          <span id="sound-icon-off" class="hidden">
+            <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+            </svg>
+          </span>
+          <span class="hidden sm:inline" id="sound-label">Звук увімк.</span>
+        </button>
+      </div>
+
+      <!-- Панель статистики квитків -->
+      <div class="grid grid-cols-3 gap-2">
+        <div class="bg-slate-800/90 border border-slate-700/80 rounded-xl px-3 py-2 text-center">
+          <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Всього</div>
+          <div id="stat-total" class="text-lg sm:text-xl font-extrabold text-white mt-0.5">0</div>
+        </div>
+        <div class="bg-emerald-950/70 border border-emerald-700/50 rounded-xl px-3 py-2 text-center">
+          <div class="text-[11px] uppercase tracking-wider text-emerald-300 font-semibold">Зіскановано</div>
+          <div id="stat-scanned" class="text-lg sm:text-xl font-extrabold text-emerald-400 mt-0.5">0</div>
+        </div>
+        <div class="bg-indigo-950/70 border border-indigo-700/50 rounded-xl px-3 py-2 text-center">
+          <div class="text-[11px] uppercase tracking-wider text-indigo-300 font-semibold">Залишилось</div>
+          <div id="stat-remaining" class="text-lg sm:text-xl font-extrabold text-indigo-300 mt-0.5">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Навігаційні вкладки -->
+    <nav class="bg-slate-800 border-t border-slate-700/80">
+      <div class="max-w-2xl mx-auto px-2 grid grid-cols-3 gap-1 py-1.5">
+        <button
+          id="tab-btn-scanner"
+          type="button"
+          onclick="switchTab('scanner')"
+          class="tab-btn py-2 px-2 rounded-lg text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition bg-indigo-600 text-white shadow"
+        >
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+          </svg>
+          <span>Сканер</span>
+        </button>
+
+        <button
+          id="tab-btn-database"
+          type="button"
+          onclick="switchTab('database')"
+          class="tab-btn py-2 px-2 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 transition text-slate-300 hover:bg-slate-700/70"
+        >
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span>База квитків</span>
+        </button>
+
+        <button
+          id="tab-btn-manage"
+          type="button"
+          onclick="switchTab('manage')"
+          class="tab-btn py-2 px-2 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 transition text-slate-300 hover:bg-slate-700/70"
+        >
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          <span>JSON / Експорт</span>
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- ==================== ІНФОРМАЦІЙНИЙ БАНЕР ПРО ДЕМО-ДАНІ ==================== -->
+  <div id="demo-banner" class="hidden bg-amber-50 border-b border-amber-200 text-amber-900">
+    <div class="max-w-2xl mx-auto px-4 py-2.5 flex items-start justify-between gap-3 text-xs sm:text-sm">
+      <div class="flex items-start gap-2">
+        <span class="text-base leading-none mt-0.5">ℹ️</span>
+        <p>
+          <strong>Режим демо-бази:</strong> файл <code class="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-xs">tickets.json</code> не знайдено поруч із <code class="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-xs">index.html</code>. Завантажено 5 тестових учасників. Додайте власний <code class="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-xs">tickets.json</code> на GitHub Pages або імпортуйте його у вкладці «JSON / Експорт».
+        </p>
+      </div>
+      <button
+        type="button"
+        onclick="document.getElementById('demo-banner').classList.add('hidden')"
+        class="text-amber-700 hover:text-amber-950 font-bold px-1.5 py-0.5 rounded"
+        aria-label="Закрити підказку"
+      >✕</button>
+    </div>
+  </div>
+
+  <!-- ==================== ОСНОВНИЙ КОНТЕНТ ==================== -->
+  <main class="flex-1 max-w-2xl w-full mx-auto px-4 py-4 space-y-4">
+
+    <!-- ==================== ВКЛАДКА 1: СКАНЕР ==================== -->
+    <section id="view-scanner" class="space-y-4">
+
+      <!-- Блок результату сканування (відображається після перевірки UUID) -->
+      <div id="scan-result-container" class="hidden"></div>
+
+      <!-- Блок камери QR-сканера -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="p-4 border-b border-slate-100 flex items-center justify-between gap-2">
+          <div>
+            <h2 class="font-bold text-slate-900 text-base">Камера QR-сканера</h2>
+            <p class="text-xs text-slate-500">Наведіть камеру на QR-код квитка з UUID</p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <!-- Перемикання камер, якщо їх декілька -->
+            <button
+              id="btn-switch-camera"
+              type="button"
+              onclick="switchCameraDevice()"
+              class="hidden p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+              title="Змінити камеру"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+
+            <!-- Кнопка Старт / Стоп камери -->
+            <button
+              id="btn-camera-toggle"
+              type="button"
+              onclick="toggleCamera()"
+              class="py-2.5 px-4 rounded-xl font-bold text-sm bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white shadow-sm transition flex items-center gap-2"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span id="btn-camera-text">Увімкнути камеру</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Вікно відеопотоку -->
+        <div class="p-4 bg-slate-950 flex flex-col items-center justify-center relative min-h-[220px]">
+          <div id="qr-reader" class="w-full max-w-sm mx-auto"></div>
+
+          <!-- Заглушка, коли камера вимкнена -->
+          <div id="camera-placeholder" class="text-center py-6 px-4 max-w-xs">
+            <div class="w-14 h-14 rounded-2xl bg-slate-800/90 border border-slate-700 mx-auto mb-3 flex items-center justify-center text-indigo-400">
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+              </svg>
+            </div>
+            <p class="text-slate-300 text-sm font-medium mb-1">Камера зараз вимкнена</p>
+            <p class="text-slate-400 text-xs">Натисніть «Увімкнути камеру» вище або введіть UUID квитка вручну нижче.</p>
+          </div>
+
+          <!-- Повідомлення про помилку доступу до камери -->
+          <div id="camera-error-box" class="hidden mt-3 w-full max-w-md bg-rose-950/90 border border-rose-700 text-rose-200 rounded-xl p-3 text-xs leading-relaxed"></div>
+        </div>
+      </div>
+
+      <!-- Блок ручного введення UUID та тестових чіпів -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+        <div>
+          <label for="manual-uuid-input" class="block text-sm font-bold text-slate-900 mb-1">
+            Ручна перевірка за UUID
+          </label>
+          <p class="text-xs text-slate-500 mb-2.5">
+            Вставте або введіть ідентифікатор квитка, якщо камера недоступна
+          </p>
+
+          <form onsubmit="handleManualSubmit(event)" class="flex flex-col sm:flex-row gap-2">
+            <input
+              id="manual-uuid-input"
+              type="text"
+              placeholder="Наприклад: 550e8400-e29b-41d4-a716-446655440001"
+              autocomplete="off"
+              spellcheck="false"
+              class="flex-1 rounded-xl border border-slate-300 px-3.5 py-3 text-sm font-mono text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            />
+            <button
+              type="submit"
+              class="py-3 px-5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-bold text-sm transition shrink-0 shadow-sm"
+            >
+              Перевірити
+            </button>
+          </form>
+        </div>
+
+        <!-- Швидкі тестові кнопки (чіпи) -->
+        <div class="pt-3 border-t border-slate-100">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Тестові UUID (натисніть для перевірки):</span>
+          </div>
+          <div id="test-uuid-chips" class="flex flex-wrap gap-2">
+            <!-- Генерується динамічно з поточної бази -->
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== ВКЛАДКА 2: БАЗА КВИТКІВ ==================== -->
+    <section id="view-database" class="hidden space-y-4">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="font-bold text-slate-900 text-base">Список учасників та квитків</h2>
+          <span id="db-filtered-count" class="text-xs font-semibold text-slate-500"></span>
+        </div>
+
+        <!-- Пошук -->
+        <div class="relative">
+          <input
+            id="db-search-input"
+            type="text"
+            oninput="renderDatabaseList()"
+            placeholder="Пошук за ПІБ, школою, телефоном або UUID..."
+            class="w-full rounded-xl border border-slate-300 pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+          <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+
+        <!-- Фільтри статусу -->
+        <div class="flex flex-wrap gap-1.5">
+          <button type="button" onclick="setDbFilter('all')" data-filter="all" class="db-filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white">Усі</button>
+          <button type="button" onclick="setDbFilter('unscanned')" data-filter="unscanned" class="db-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Не зіскановані</button>
+          <button type="button" onclick="setDbFilter('scanned')" data-filter="scanned" class="db-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Зіскановані</button>
+          <button type="button" onclick="setDbFilter('consent')" data-filter="consent" class="db-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">Потрібен дозвіл</button>
+        </div>
+      </div>
+
+      <!-- Контейнер списку квитків -->
+      <div id="database-list-container" class="space-y-3"></div>
+    </section>
+
+    <!-- ==================== ВКЛАДКА 3: JSON / GITHUB PAGES ==================== -->
+    <section id="view-manage" class="hidden space-y-4">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-4">
+        <div>
+          <h2 class="font-bold text-slate-900 text-base mb-1">Керування базою даних (GitHub Pages)</h2>
+          <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+            Оскільки <strong>GitHub Pages</strong> є статичним хостингом, відмітки про сканування автоматично зберігаються у пам'яті цього пристрою (<code class="bg-slate-100 px-1 rounded font-mono text-xs">localStorage</code>). Щоб зберегти оновлену базу з відмітками <code class="bg-slate-100 px-1 rounded font-mono text-xs">"scanned": true</code>, натисніть <strong>«Експортувати оновлений tickets.json»</strong>.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3">
+          <!-- Експорт JSON -->
+          <button
+            type="button"
+            onclick="exportTicketsJson()"
+            class="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold text-sm shadow-sm transition flex items-center justify-center gap-2"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            <span>Експортувати оновлений tickets.json</span>
+          </button>
+
+          <!-- Імпорт JSON -->
+          <label class="w-full py-3.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold text-sm shadow-sm transition flex items-center justify-center gap-2 cursor-pointer">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span>Імпортувати власний tickets.json</span>
+            <input
+              id="json-file-input"
+              type="file"
+              accept=".json,application/json"
+              onchange="handleImportJsonFile(event)"
+              class="hidden"
+            />
+          </label>
+
+          <!-- Показати приклад JSON -->
+          <button
+            type="button"
+            onclick="openExampleModal()"
+            class="w-full py-3.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900 font-bold text-sm transition flex items-center justify-center gap-2 border border-slate-300"
+          >
+            <svg class="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+            </svg>
+            <span>Показати приклад структури tickets.json</span>
+          </button>
+
+          <!-- Скинути всі сканування -->
+          <button
+            type="button"
+            onclick="openResetConfirmModal()"
+            class="w-full py-3.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-sm transition flex items-center justify-center gap-2 border border-rose-200 mt-2"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            <span>Скинути всі відмітки сканування</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== СПЛАВАЮЧЕ ПОВІДОМЛЕННЯ (TOAST) ==================== -->
+  <div id="toast-container" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none w-full max-w-sm px-4"></div>
+
+  <!-- ==================== МОДАЛЬНЕ ВІКНО: QR-КОД УЧАСНИКА ==================== -->
+  <div id="modal-qr" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl animate-pop-in space-y-4">
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-indigo-600">QR-код квитка</span>
+          <h3 id="modal-qr-pib" class="font-extrabold text-slate-900 text-lg leading-snug mt-0.5"></h3>
+          <p id="modal-qr-school" class="text-xs text-slate-500 mt-0.5"></p>
+        </div>
+        <button type="button" onclick="closeModal('modal-qr')" class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold">✕</button>
+      </div>
+
+      <div class="bg-white border-2 border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center">
+        <div id="modal-qr-canvas" class="p-2 bg-white"></div>
+        <p id="modal-qr-uuid" class="mt-3 text-[11px] font-mono text-slate-600 break-all text-center bg-slate-100 px-2.5 py-1.5 rounded-lg w-full"></p>
+      </div>
+
+      <div class="flex gap-2">
+        <button
+          type="button"
+          onclick="copyModalUuid()"
+          class="flex-1 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition"
+        >
+          Копіювати UUID
+        </button>
+        <button
+          type="button"
+          onclick="closeModal('modal-qr')"
+          class="flex-1 py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition"
+        >
+          Закрити
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== МОДАЛЬНЕ ВІКНО: ПРИКЛАД TICKETS.JSON ==================== -->
+  <div id="modal-example" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl animate-pop-in space-y-4 max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between gap-2">
+        <div>
+          <h3 class="font-extrabold text-slate-900 text-base">Приклад файлу tickets.json</h3>
+          <p class="text-xs text-slate-500">Завантажте цей файл у репозиторій GitHub Pages поруч із index.html</p>
+        </div>
+        <button type="button" onclick="closeModal('modal-example')" class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold">✕</button>
+      </div>
+
+      <pre id="example-json-code" class="bg-slate-900 text-emerald-300 font-mono text-xs p-3.5 rounded-xl overflow-auto flex-1 leading-relaxed"></pre>
+
+      <div class="flex gap-2 pt-1">
+        <button
+          type="button"
+          onclick="copyExampleJson()"
+          class="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition flex items-center justify-center gap-2"
+        >
+          <span>Копіювати JSON</span>
+        </button>
+        <button
+          type="button"
+          onclick="closeModal('modal-example')"
+          class="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm transition"
+        >
+          Закрити
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== МОДАЛЬНЕ ВІКНО: ПІДТВЕРДЖЕННЯ СКИДАННЯ ==================== -->
+  <div id="modal-reset" class="hidden fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl animate-pop-in space-y-4">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 font-bold text-xl">!</div>
+        <div>
+          <h3 class="font-extrabold text-slate-900 text-base">Скинути всі сканування?</h3>
+          <p class="text-xs text-slate-600 mt-0.5">Усі збережені на цьому пристрої позначки «Вже зіскановано» буде очищено.</p>
+        </div>
+      </div>
+
+      <div class="flex gap-2 pt-1">
+        <button
+          type="button"
+          onclick="closeModal('modal-reset')"
+          class="flex-1 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm transition"
+        >
+          Скасувати
+        </button>
+        <button
+          type="button"
+          onclick="confirmResetAllScans()"
+          class="flex-1 py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm transition"
+        >
+          Так, скинути
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== ЛОГІКА ДОДАТКУ ==================== -->
+  <script>
+    // Ключі сховища localStorage
+    const STORAGE_KEY_SCANS = 'ticket_scanner_scans_v1';
+    const STORAGE_KEY_MUTE = 'ticket_scanner_muted_v1';
+
+    // Вбудована демонстраційна база даних (використовується, якщо ./tickets.json недоступний)
+    const DEMO_TICKETS = [
+      {
+        uuid: '550e8400-e29b-41d4-a716-446655440001',
+        pib: 'Коваленко Олександр Сергійович',
+        school: 'Львівський фізико-математичний ліцей',
+        phone: '+380671234567',
+        parentalConsentNeeded: true,
+        scanned: false
+      },
+      {
+        uuid: '550e8400-e29b-41d4-a716-446655440002',
+        pib: 'Мельник Софія Андріївна',
+        school: 'Ліцей №5 ім. Іванни та Іллі Кокорудзів',
+        phone: '+380509876543',
+        parentalConsentNeeded: false,
+        scanned: false
+      },
+      {
+        uuid: '550e8400-e29b-41d4-a716-446655440003',
+        pib: 'Бондаренко Максим Ігорович',
+        school: 'СЗШ №34 ім. Маркіяна Шашкевича',
+        phone: '+380934567890',
+        parentalConsentNeeded: true,
+        scanned: true,
+        scannedAt: '2026-11-22T09:15:00.000Z'
+      },
+      {
+        uuid: '550e8400-e29b-41d4-a716-446655440004',
+        pib: 'Шевченко Дарина Олегівна',
+        school: 'Класична гімназія при ЛНУ ім. І. Франка',
+        phone: '+380631112233',
+        parentalConsentNeeded: false,
+        scanned: false
+      },
+      {
+        uuid: '550e8400-e29b-41d4-a716-446655440005',
+        pib: 'Ткаченко Артем Володимирович',
+        school: 'Ліцей «Сихівський» ЛМР',
+        phone: '+380975554433',
+        parentalConsentNeeded: true,
+        scanned: false
+      }
+    ];
+
+    // Стан додатку
+    let ticketsMap = new Map(); // uuid (lowercase) -> нормалізований об'єкт квитка
+    let originalJsonFormat = 'array'; // 'array' або 'object' (щоб при експорті зберегти формат)
+    let isDemoMode = false;
+    let currentDbFilter = 'all';
+    let isMuted = false;
+    let audioCtx = null;
+
+    // Стан камери html5-qrcode
+    let html5QrCode = null;
+    let isCameraRunning = false;
+    let availableCameras = [];
+    let currentCameraIndex = 0;
+    let lastCameraScannedUuid = '';
+    let lastCameraScanTime = 0;
+
+    // ==================== ІНІЦІАЛІЗАЦІЯ ====================
+    document.addEventListener('DOMContentLoaded', async () => {
+      try {
+        isMuted = localStorage.getItem(STORAGE_KEY_MUTE) === 'true';
+        updateSoundButtonUI();
+      } catch (e) {
+        console.warn('Не вдалося прочитати налаштування звуку з localStorage:', e);
+      }
+
+      await loadTicketsDatabase();
+    });
+
+    // ==================== ЗАВАНТАЖЕННЯ ТА НОРМАЛІЗАЦІЯ БАЗИ ====================
+    async function loadTicketsDatabase() {
+      const sourceLabel = document.getElementById('db-source-label');
+      const demoBanner = document.getElementById('demo-banner');
+
+      try {
+        const response = await fetch('./tickets.json', { cache: 'no-store' });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const rawData = await response.json();
+        parseAndSetTickets(rawData, false);
+        sourceLabel.textContent = 'Підключено: ./tickets.json';
+        demoBanner.classList.add('hidden');
+      } catch (err) {
+        // Якщо tickets.json не знайдено — вмикаємо демо-режим
+        console.info('Файл ./tickets.json не знайдено, завантажуємо демо-дані:', err.message);
+        parseAndSetTickets(DEMO_TICKETS, true);
+        sourceLabel.textContent = 'Демо-база (5 квитків)';
+        demoBanner.classList.remove('hidden');
+      }
+    }
+
+    /**
+     * Перетворює масив або словник квитків у внутрішню Map та підтягує збережені сканування з localStorage
+     */
+    function parseAndSetTickets(rawData, demoFlag) {
+      isDemoMode = demoFlag;
+      ticketsMap.clear();
+
+      const savedScans = getSavedScansFromStorage();
+
+      if (Array.isArray(rawData)) {
+        originalJsonFormat = 'array';
+        rawData.forEach((item) => {
+          if (!item || !item.uuid) return;
+          const normalized = normalizeTicketObject(item.uuid, item, savedScans);
+          ticketsMap.set(normalized.uuid.toLowerCase(), normalized);
+        });
+      } else if (rawData && typeof rawData === 'object') {
+        originalJsonFormat = 'object';
+        Object.entries(rawData).forEach(([keyUuid, item]) => {
+          if (!item || typeof item !== 'object') return;
+          const uuidVal = item.uuid || keyUuid;
+          const normalized = normalizeTicketObject(uuidVal, item, savedScans);
+          ticketsMap.set(normalized.uuid.toLowerCase(), normalized);
+        });
+      }
+
+      refreshAllViews();
+    }
+
+    /**
+     * Уніфікує поля квитка незалежно від варіантів назв ключів
+     */
+    function normalizeTicketObject(uuidRaw, item, savedScans) {
+      const cleanUuid = String(uuidRaw).trim();
+      const key = cleanUuid.toLowerCase();
+      const savedState = savedScans[key];
+
+      const baseScanned = Boolean(item.scanned ?? item.isScanned ?? false);
+      const finalScanned = savedState ? Boolean(savedState.scanned) : baseScanned;
+      const finalScannedAt = savedState?.scannedAt || item.scannedAt || null;
+
+      return {
+        uuid: cleanUuid,
+        pib: String(item.pib || item.fullName || item.name || 'Не вказано').trim(),
+        school: String(item.school || item.institution || 'Не вказано').trim(),
+        phone: String(item.phone || item.phoneNumber || '').trim(),
+        parentalConsentNeeded: Boolean(
+          item.parentalConsentNeeded ?? item.parentConsent ?? item.needsParentalConsent ?? false
+        ),
+        scanned: finalScanned,
+        scannedAt: finalScannedAt,
+        initialScanned: baseScanned
+      };
+    }
+
+    function getSavedScansFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_SCANS);
+        return raw ? JSON.parse(raw) : {};
+      } catch (e) {
+        console.warn('Помилка читання localStorage:', e);
+        return {};
+      }
+    }
+
+    function persistScanStateToStorage() {
+      try {
+        const stateObj = {};
+        ticketsMap.forEach((ticket, key) => {
+          stateObj[key] = {
+            scanned: ticket.scanned,
+            scannedAt: ticket.scannedAt || null
+          };
+        });
+        localStorage.setItem(STORAGE_KEY_SCANS, JSON.stringify(stateObj));
+      } catch (e) {
+        console.warn('Не вдалося зберегти стан у localStorage:', e);
+      }
+    }
+
+    function refreshAllViews() {
+      updateStats();
+      renderTestChips();
+      renderDatabaseList();
+    }
+
+    // ==================== СТАТИСТИКА ====================
+    function updateStats() {
+      let total = ticketsMap.size;
+      let scanned = 0;
+
+      ticketsMap.forEach((t) => {
+        if (t.scanned) scanned++;
+      });
+
+      const remaining = Math.max(0, total - scanned);
+
+      document.getElementById('stat-total').textContent = total;
+      document.getElementById('stat-scanned').textContent = scanned;
+      document.getElementById('stat-remaining').textContent = remaining;
+    }
+
+    // ==================== ПЕРЕВІРКА UUID ТА ВІДОБРАЖЕННЯ РЕЗУЛЬТАТУ ====================
+    function handleManualSubmit(event) {
+      event.preventDefault();
+      const input = document.getElementById('manual-uuid-input');
+      const val = input.value.trim();
+      if (!val) {
+        showToast('Введіть або вставте UUID квитка', 'warning');
+        input.focus();
+        return;
+      }
+      processTicketLookup(val);
+    }
+
+    /**
+     * Головна функція перевірки UUID квитка
+     */
+    function processTicketLookup(rawScannedText) {
+      initAudioContext();
+
+      // Витягуємо UUID, якщо QR-код містить посилання або зайві пробіли
+      const cleaned = extractUuidFromText(rawScannedText);
+      const lookupKey = cleaned.toLowerCase();
+
+      const resultContainer = document.getElementById('scan-result-container');
+      resultContainer.classList.remove('hidden');
+
+      if (!ticketsMap.has(lookupKey)) {
+        // 3. КВИТОК НЕ ЗНАЙДЕНО
+        playSound('error');
+        resultContainer.innerHTML = renderNotFoundCard(cleaned);
+        resultContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return;
+      }
+
+      const ticket = ticketsMap.get(lookupKey);
+
+      if (ticket.scanned) {
+        // 2. УВАГА! КВИТОК ВЖЕ ЗІСКАНОВАНО
+        playSound('warning');
+        resultContainer.innerHTML = renderAlreadyScannedCard(ticket);
+        resultContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return;
+      }
+
+      // 1. КВИТОК ДІЙСНИЙ — ПОЗНАЧАЄМО ЯК ЗІСКАНОВАНИЙ
+      ticket.scanned = true;
+      ticket.scannedAt = new Date().toISOString();
+      persistScanStateToStorage();
+      refreshAllViews();
+
+      playSound('valid');
+      resultContainer.innerHTML = renderValidTicketCard(ticket);
+      resultContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    /**
+     * Якщо QR містить URL типу https://site.com/ticket/550e8400-..., дістає сам UUID; інакше повертає очищений рядок
+     */
+    function extractUuidFromText(text) {
+      const trimmed = String(text || '').trim();
+      const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+      const match = trimmed.match(uuidRegex);
+      return match ? match[0] : trimmed;
+    }
+
+    function formatUkrainianDateTime(isoString) {
+      if (!isoString) return 'щойно';
+      try {
+        const d = new Date(isoString);
+        return d.toLocaleString('uk-UA', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+      } catch (e) {
+        return isoString;
+      }
+    }
+
+    function renderTicketFieldsHtml(ticket, justMarked) {
+      const consentBadge = ticket.parentalConsentNeeded
+        ? `<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-extrabold bg-amber-100 text-amber-950 border-2 border-amber-400 shadow-2xs">
+             ⚠️ ТАК, потрібен дозвіл батьків
+           </span>`
+        : `<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+             ✅ Ні, не потрібен
+           </span>`;
+
+      const scannedText = ticket.scanned
+        ? `Так (${formatUkrainianDateTime(ticket.scannedAt)})`
+        : 'Ні';
+
+      const phoneHref = ticket.phone ? `tel:${ticket.phone.replace(/[^\d+]/g, '')}` : '#';
+
+      return `
+        <div class="bg-white/95 rounded-xl p-4 space-y-3 border border-black/5 shadow-2xs">
+          <!-- ПІБ -->
+          <div>
+            <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">ПІБ учасника</div>
+            <div class="text-lg sm:text-xl font-extrabold text-slate-900 leading-snug mt-0.5">${escapeHtml(ticket.pib)}</div>
+          </div>
+
+          <!-- Школа -->
+          <div>
+            <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Школа / Заклад освіти</div>
+            <div class="text-sm sm:text-base font-semibold text-slate-800 mt-0.5">${escapeHtml(ticket.school)}</div>
+          </div>
+
+          <!-- Потрібен дозвіл батьків -->
+          <div>
+            <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Потрібен дозвіл батьків</div>
+            <div>${consentBadge}</div>
+          </div>
+
+          <!-- Номер телефону та Статус сканування -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-200/80">
+              <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Номер телефону</div>
+              ${
+                ticket.phone
+                  ? `<a href="${phoneHref}" class="inline-flex items-center gap-1.5 text-sm font-bold text-indigo-600 hover:text-indigo-800 underline decoration-indigo-300 mt-0.5">
+                       📞 ${escapeHtml(ticket.phone)}
+                     </a>`
+                  : `<span class="text-sm text-slate-500">Не вказано</span>`
+              }
+            </div>
+
+            <div class="bg-slate-50 rounded-xl p-2.5 border border-slate-200/80">
+              <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Вже зіскановано</div>
+              <div class="text-sm font-bold text-slate-800 mt-0.5">${escapeHtml(scannedText)}</div>
+            </div>
+          </div>
+
+          <!-- UUID -->
+          <div class="pt-1">
+            <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">UUID квитка</div>
+            <div class="mt-0.5 font-mono text-xs text-slate-600 bg-slate-100 px-2.5 py-1.5 rounded-lg break-all select-all">
+              ${escapeHtml(ticket.uuid)}
+            </div>
+          </div>
+
+          ${
+            justMarked
+              ? `<div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                   <span class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                     ✨ Щойно позначено як зісканований
+                   </span>
+                   <button
+                     type="button"
+                     onclick="undoTicketScan('${escapeHtml(ticket.uuid)}')"
+                     class="text-xs font-semibold text-slate-500 hover:text-rose-600 underline"
+                   >
+                     Скасувати позначку
+                   </button>
+                 </div>`
+              : ''
+          }
+        </div>
+      `;
+    }
+
+    function renderValidTicketCard(ticket) {
+      return `
+        <div class="animate-pop-in rounded-2xl bg-emerald-50 border-2 border-emerald-500 shadow-lg overflow-hidden">
+          <div class="bg-emerald-600 text-white px-4 py-3 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-xl">✅</span>
+              <div>
+                <div class="font-extrabold text-sm sm:text-base tracking-tight">КВИТОК ДІЙСНИЙ — ПРОХІД ДОЗВОЛЕНО</div>
+              </div>
+            </div>
+            <button type="button" onclick="clearResultCard()" class="text-white/80 hover:text-white font-bold px-2 py-1 rounded-lg">✕</button>
+          </div>
+          <div class="p-3.5">
+            ${renderTicketFieldsHtml(ticket, true)}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderAlreadyScannedCard(ticket) {
+      return `
+        <div class="animate-pop-in rounded-2xl bg-amber-50 border-2 border-amber-500 shadow-lg overflow-hidden">
+          <div class="bg-amber-500 text-amber-950 px-4 py-3 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-xl">⚠️</span>
+              <div>
+                <div class="font-extrabold text-sm sm:text-base tracking-tight">УВАГА! КВИТОК ВЖЕ ЗІСКАНОВАНО</div>
+                <div class="text-xs font-semibold text-amber-950/90">Повторний вхід за цим QR-кодом заборонено</div>
+              </div>
+            </div>
+            <button type="button" onclick="clearResultCard()" class="text-amber-950/80 hover:text-amber-950 font-bold px-2 py-1 rounded-lg">✕</button>
+          </div>
+          <div class="p-3.5">
+            ${renderTicketFieldsHtml(ticket, false)}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderNotFoundCard(scannedUuid) {
+      return `
+        <div class="animate-pop-in rounded-2xl bg-rose-50 border-2 border-rose-500 shadow-lg overflow-hidden">
+          <div class="bg-rose-600 text-white px-4 py-3 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-xl">❌</span>
+              <div>
+                <div class="font-extrabold text-sm sm:text-base tracking-tight">КВИТОК НЕ ЗНАЙДЕНО</div>
+                <div class="text-xs text-rose-100">Цей UUID відсутній у базі даних події</div>
+              </div>
+            </div>
+            <button type="button" onclick="clearResultCard()" class="text-white/80 hover:text-white font-bold px-2 py-1 rounded-lg">✕</button>
+          </div>
+          <div class="p-4">
+            <div class="bg-white rounded-xl p-3.5 border border-rose-200 space-y-2">
+              <div class="text-xs font-bold uppercase tracking-wider text-slate-400">Зчитане значення:</div>
+              <div class="font-mono text-xs sm:text-sm text-rose-700 bg-rose-50 px-3 py-2 rounded-lg break-all font-semibold">
+                ${escapeHtml(scannedUuid)}
+              </div>
+              <p class="text-xs text-slate-600 pt-1">
+                Перевірте правильність QR-коду або переконайтеся, що завантажено актуальний файл <code class="font-mono bg-slate-100 px-1 rounded">tickets.json</code>.
+              </p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function clearResultCard() {
+      const el = document.getElementById('scan-result-container');
+      el.classList.add('hidden');
+      el.innerHTML = '';
+    }
+
+    function undoTicketScan(uuid) {
+      const key = uuid.toLowerCase();
+      if (!ticketsMap.has(key)) return;
+      const ticket = ticketsMap.get(key);
+      ticket.scanned = false;
+      ticket.scannedAt = null;
+      persistScanStateToStorage();
+      refreshAllViews();
+      clearResultCard();
+      showToast(`Позначку сканування для «${ticket.pib}» скасовано`, 'info');
+    }
+
+    // ==================== ТЕСТОВІ ЧІПИ ====================
+    function renderTestChips() {
+      const container = document.getElementById('test-uuid-chips');
+      if (!container) return;
+
+      const allTickets = Array.from(ticketsMap.values());
+      const sampleTickets = allTickets.slice(0, 3);
+
+      let html = '';
+      sampleTickets.forEach((t) => {
+        const shortName = t.pib.split(' ')[0];
+        const statusDot = t.scanned
+          ? '<span class="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>'
+          : '<span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>';
+        const badgeText = t.scanned ? 'вже зіск.' : 'дійсний';
+
+        html += `
+          <button
+            type="button"
+            onclick="testChipClick('${escapeHtml(t.uuid)}')"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:border-indigo-300 border border-slate-200 text-xs font-medium text-slate-800 transition active:scale-95"
+          >
+            ${statusDot}
+            <span class="font-bold">${escapeHtml(shortName)}</span>
+            <span class="text-slate-400">(${badgeText})</span>
+          </button>
+        `;
+      });
+
+      // Додаємо неіснуючий UUID для тесту червоної картки
+      html += `
+        <button
+          type="button"
+          onclick="testChipClick('00000000-0000-0000-0000-000000000000')"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-medium text-rose-800 transition active:scale-95"
+        >
+          <span class="w-2 h-2 rounded-full bg-rose-500 inline-block"></span>
+          <span class="font-bold">Неіснуючий UUID</span>
+        </button>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    function testChipClick(uuid) {
+      document.getElementById('manual-uuid-input').value = uuid;
+      processTicketLookup(uuid);
+    }
+
+    // ==================== РОБОТА З КАМЕРОЮ (HTML5-QRCODE) ====================
+    async function toggleCamera() {
+      initAudioContext();
+      if (isCameraRunning) {
+        await stopCamera();
+      } else {
+        await startCamera();
+      }
+    }
+
+    async function startCamera() {
+      const errorBox = document.getElementById('camera-error-box');
+      const placeholder = document.getElementById('camera-placeholder');
+      const btnText = document.getElementById('btn-camera-text');
+      const btnToggle = document.getElementById('btn-camera-toggle');
+
+      errorBox.classList.add('hidden');
+      errorBox.textContent = '';
+
+      if (typeof Html5Qrcode === 'undefined') {
+        errorBox.textContent = 'Бібліотека сканера QR-кодів не завантажилась. Перевірте підключення до інтернету або скористайтеся ручним введенням UUID.';
+        errorBox.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        if (!html5QrCode) {
+          html5QrCode = new Html5Qrcode('qr-reader');
+        }
+
+        // Отримуємо список камер
+        try {
+          availableCameras = await Html5Qrcode.getCameras();
+          if (availableCameras && availableCameras.length > 1) {
+            document.getElementById('btn-switch-camera').classList.remove('hidden');
+          }
+        } catch (camListErr) {
+          console.warn('Не вдалося отримати список камер заздалегідь:', camListErr);
+        }
+
+        placeholder.classList.add('hidden');
+
+        const qrConfig = {
+          fps: 10,
+          qrbox: { width: 230, height: 230 },
+          aspectRatio: 1.0
+        };
+
+        const cameraConstraint =
+          availableCameras && availableCameras.length > 0 && currentCameraIndex > 0
+            ? availableCameras[currentCameraIndex].id
+            : { facingMode: 'environment' };
+
+        await html5QrCode.start(
+          cameraConstraint,
+          qrConfig,
+          onQrCodeScannedSuccess,
+          () => {
+            // Ігноруємо проміжні кадри без QR-коду
+          }
+        );
+
+        isCameraRunning = true;
+        btnText.textContent = 'Зупинити камеру';
+        btnToggle.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+        btnToggle.classList.add('bg-rose-600', 'hover:bg-rose-700');
+      } catch (err) {
+        console.error('Помилка запуску камери:', err);
+        isCameraRunning = false;
+        placeholder.classList.remove('hidden');
+        btnText.textContent = 'Увімкнути камеру';
+        btnToggle.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+        btnToggle.classList.remove('bg-rose-600', 'hover:bg-rose-700');
+
+        errorBox.innerHTML = `
+          <strong>Не вдалося отримати доступ до камери.</strong><br/>
+          Переконайтеся, що ви надали дозвіл на використання камери у браузері та відкрили сайт по захищеному з'єднанню <strong>HTTPS</strong> (наприклад, на GitHub Pages). Ви також можете перевіряти квитки вручну нижче.
+        `;
+        errorBox.classList.remove('hidden');
+      }
+    }
+
+    async function stopCamera() {
+      const placeholder = document.getElementById('camera-placeholder');
+      const btnText = document.getElementById('btn-camera-text');
+      const btnToggle = document.getElementById('btn-camera-toggle');
+
+      try {
+        if (html5QrCode && isCameraRunning) {
+          await html5QrCode.stop();
+        }
+      } catch (err) {
+        console.warn('Помилка при зупинці камери:', err);
+      } finally {
+        isCameraRunning = false;
+        placeholder.classList.remove('hidden');
+        btnText.textContent = 'Увімкнути камеру';
+        btnToggle.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+        btnToggle.classList.remove('bg-rose-600', 'hover:bg-rose-700');
+      }
+    }
+
+    async function switchCameraDevice() {
+      if (!availableCameras || availableCameras.length < 2) return;
+      currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+      if (isCameraRunning) {
+        await stopCamera();
+        await startCamera();
+      }
+    }
+
+    /**
+     * Обробник успішного зчитування QR-коду з камери (із захистом від миттєвого повторного спрацьовування)
+     */
+    function onQrCodeScannedSuccess(decodedText) {
+      const now = Date.now();
+      const extracted = extractUuidFromText(decodedText);
+
+      // Якщо той самий QR-код залишається перед камерою менше 3 секунд — пропускаємо дублікат кадру
+      if (extracted.toLowerCase() === lastCameraScannedUuid.toLowerCase() && now - lastCameraScanTime < 3000) {
+        return;
+      }
+
+      lastCameraScannedUuid = extracted;
+      lastCameraScanTime = now;
+
+      document.getElementById('manual-uuid-input').value = extracted;
+      processTicketLookup(extracted);
+    }
+
+    // ==================== ВКЛАДКА: БАЗА КВИТКІВ ====================
+    function setDbFilter(filterName) {
+      currentDbFilter = filterName;
+      document.querySelectorAll('.db-filter-btn').forEach((btn) => {
+        if (btn.dataset.filter === filterName) {
+          btn.className = 'db-filter-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white';
+        } else {
+          btn.className = 'db-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200';
+        }
+      });
+      renderDatabaseList();
+    }
+
+    function renderDatabaseList() {
+      const container = document.getElementById('database-list-container');
+      const countLabel = document.getElementById('db-filtered-count');
+      const searchInput = document.getElementById('db-search-input');
+      if (!container) return;
+
+      const query = (searchInput?.value || '').trim().toLowerCase();
+      const tickets = Array.from(ticketsMap.values());
+
+      const filtered = tickets.filter((t) => {
+        if (currentDbFilter === 'scanned' && !t.scanned) return false;
+        if (currentDbFilter === 'unscanned' && t.scanned) return false;
+        if (currentDbFilter === 'consent' && !t.parentalConsentNeeded) return false;
+
+        if (!query) return true;
+        return (
+          t.pib.toLowerCase().includes(query) ||
+          t.school.toLowerCase().includes(query) ||
+          t.phone.toLowerCase().includes(query) ||
+          t.uuid.toLowerCase().includes(query)
+        );
+      });
+
+      if (countLabel) {
+        countLabel.textContent = `Показано: ${filtered.length} із ${tickets.length}`;
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500 text-sm">
+            За вашим запитом квитків не знайдено.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered
+        .map((t) => {
+          const statusBadge = t.scanned
+            ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800">✅ Зіскановано</span>`
+            : `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-700">⏳ Очікує</span>`;
+
+          const consentTag = t.parentalConsentNeeded
+            ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">⚠️ Потрібен дозвіл батьків</span>`
+            : `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 text-slate-600">Дозвіл не потрібен</span>`;
+
+          const toggleScanBtnLabel = t.scanned ? 'Скинути статус' : 'Позначити вхід';
+          const toggleScanBtnStyle = t.scanned
+            ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200';
+
+          return `
+            <div class="bg-white rounded-2xl shadow-2xs border border-slate-200 p-4 space-y-2.5">
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <h3 class="font-bold text-slate-900 text-sm sm:text-base">${escapeHtml(t.pib)}</h3>
+                  <p class="text-xs text-slate-500 mt-0.5">${escapeHtml(t.school)}</p>
+                </div>
+                <div class="shrink-0">${statusBadge}</div>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2 text-xs">
+                ${consentTag}
+                ${
+                  t.phone
+                    ? `<a href="tel:${t.phone.replace(/[^\d+]/g, '')}" class="text-indigo-600 font-semibold hover:underline">📞 ${escapeHtml(t.phone)}</a>`
+                    : ''
+                }
+              </div>
+
+              <div class="font-mono text-[11px] text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 break-all">
+                ${escapeHtml(t.uuid)}
+              </div>
+
+              <div class="pt-1 flex items-center gap-2">
+                <button
+                  type="button"
+                  onclick="openQrModal('${escapeHtml(t.uuid)}')"
+                  class="flex-1 py-2 px-3 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs transition flex items-center justify-center gap-1.5"
+                >
+                  <span>Показати QR</span>
+                </button>
+                <button
+                  type="button"
+                  onclick="toggleTicketStatusManually('${escapeHtml(t.uuid)}')"
+                  class="flex-1 py-2 px-3 rounded-xl border font-bold text-xs transition ${toggleScanBtnStyle}"
+                >
+                  ${toggleScanBtnLabel}
+                </button>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+    }
+
+    function toggleTicketStatusManually(uuid) {
+      const key = uuid.toLowerCase();
+      if (!ticketsMap.has(key)) return;
+      const ticket = ticketsMap.get(key);
+      ticket.scanned = !ticket.scanned;
+      ticket.scannedAt = ticket.scanned ? new Date().toISOString() : null;
+      persistScanStateToStorage();
+      refreshAllViews();
+      showToast(
+        ticket.scanned
+          ? `Квиток «${ticket.pib}» позначено як зісканований`
+          : `Статус квитка «${ticket.pib}» скинуто`,
+        'info'
+      );
+    }
+
+    // ==================== ІМПОРТ / ЕКСПОРТ JSON ====================
+    function handleImportJsonFile(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          parseAndSetTickets(parsed, false);
+
+          document.getElementById('db-source-label').textContent = `Файл: ${file.name}`;
+          document.getElementById('demo-banner').classList.add('hidden');
+          clearResultCard();
+
+          showToast(`Успішно завантажено ${ticketsMap.size} квитків!`, 'success');
+          switchTab('scanner');
+        } catch (err) {
+          console.error('Помилка парсингу JSON:', err);
+          showToast('Помилка: некоректний формат JSON-файлу', 'error');
+        } finally {
+          event.target.value = '';
+        }
+      };
+      reader.readAsText(file, 'UTF-8');
+    }
+
+    function exportTicketsJson() {
+      try {
+        let outputPayload;
+
+        if (originalJsonFormat === 'object') {
+          outputPayload = {};
+          ticketsMap.forEach((t) => {
+            outputPayload[t.uuid] = {
+              pib: t.pib,
+              school: t.school,
+              phone: t.phone,
+              parentalConsentNeeded: t.parentalConsentNeeded,
+              scanned: t.scanned,
+              ...(t.scannedAt ? { scannedAt: t.scannedAt } : {})
+            };
+          });
+        } else {
+          outputPayload = Array.from(ticketsMap.values()).map((t) => ({
+            uuid: t.uuid,
+            pib: t.pib,
+            school: t.school,
+            phone: t.phone,
+            parentalConsentNeeded: t.parentalConsentNeeded,
+            scanned: t.scanned,
+            ...(t.scannedAt ? { scannedAt: t.scannedAt } : {})
+          }));
+        }
+
+        const jsonStr = JSON.stringify(outputPayload, null, 2);
+        const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'tickets.json';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        showToast('Файл tickets.json збережено на пристрій', 'success');
+      } catch (err) {
+        console.error('Помилка експорту:', err);
+        showToast('Не вдалося експортувати файл', 'error');
+      }
+    }
+
+    function openResetConfirmModal() {
+      document.getElementById('modal-reset').classList.remove('hidden');
+    }
+
+    function confirmResetAllScans() {
+      try {
+        localStorage.removeItem(STORAGE_KEY_SCANS);
+      } catch (e) {
+        console.warn(e);
+      }
+
+      ticketsMap.forEach((t) => {
+        t.scanned = false;
+        t.scannedAt = null;
+      });
+
+      refreshAllViews();
+      clearResultCard();
+      closeModal('modal-reset');
+      showToast('Усі відмітки сканування скинуто', 'info');
+    }
+
+    // ==================== МОДАЛЬНІ ВІКНА (QR ТА ПРИКЛАД JSON) ====================
+    let currentModalUuid = '';
+
+    function openQrModal(uuid) {
+      const key = uuid.toLowerCase();
+      const ticket = ticketsMap.get(key);
+      if (!ticket) return;
+
+      currentModalUuid = ticket.uuid;
+      document.getElementById('modal-qr-pib').textContent = ticket.pib;
+      document.getElementById('modal-qr-school').textContent = ticket.school;
+      document.getElementById('modal-qr-uuid').textContent = ticket.uuid;
+
+      const qrContainer = document.getElementById('modal-qr-canvas');
+      qrContainer.innerHTML = '';
+
+      if (typeof QRCode !== 'undefined') {
+        new QRCode(qrContainer, {
+          text: ticket.uuid,
+          width: 200,
+          height: 200,
+          colorDark: '#0f172a',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      } else {
+        qrContainer.innerHTML = '<p class="text-xs text-rose-600">Не вдалося згенерувати QR-код</p>';
+      }
+
+      document.getElementById('modal-qr').classList.remove('hidden');
+    }
+
+    function copyModalUuid() {
+      if (!currentModalUuid) return;
+      copyTextToClipboard(currentModalUuid, 'UUID скопійовано в буфер обміну');
+    }
+
+    function openExampleModal() {
+      const sample = [
+        {
+          uuid: '550e8400-e29b-41d4-a716-446655440001',
+          pib: 'Коваленко Олександр Сергійович',
+          school: 'Львівський фізико-математичний ліцей',
+          phone: '+380671234567',
+          parentalConsentNeeded: true,
+          scanned: false
+        },
+        {
+          uuid: '550e8400-e29b-41d4-a716-446655440002',
+          pib: 'Мельник Софія Андріївна',
+          school: 'Ліцей №5 ім. Іванни та Іллі Кокорудзів',
+          phone: '+380509876543',
+          parentalConsentNeeded: false,
+          scanned: false
+        }
+      ];
+      document.getElementById('example-json-code').textContent = JSON.stringify(sample, null, 2);
+      document.getElementById('modal-example').classList.remove('hidden');
+    }
+
+    function copyExampleJson() {
+      const code = document.getElementById('example-json-code').textContent;
+      copyTextToClipboard(code, 'Приклад JSON скопійовано!');
+    }
+
+    function closeModal(modalId) {
+      document.getElementById(modalId).classList.add('hidden');
+    }
+
+    // ==================== НАВІГАЦІЯ ВКЛАДОК ====================
+    function switchTab(tabName) {
+      const tabs = ['scanner', 'database', 'manage'];
+      tabs.forEach((name) => {
+        const view = document.getElementById(`view-${name}`);
+        const btn = document.getElementById(`tab-btn-${name}`);
+        if (name === tabName) {
+          view.classList.remove('hidden');
+          btn.className = 'tab-btn py-2 px-2 rounded-lg text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition bg-indigo-600 text-white shadow';
+        } else {
+          view.classList.add('hidden');
+          btn.className = 'tab-btn py-2 px-2 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 transition text-slate-300 hover:bg-slate-700/70';
+        }
+      });
+
+      if (tabName === 'database') {
+        renderDatabaseList();
+      }
+    }
+
+    // ==================== ЗВУКОВІ СИГНАЛИ (WEB AUDIO API) ====================
+    function initAudioContext() {
+      try {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (AudioContextClass) {
+            audioCtx = new AudioContextClass();
+          }
+        }
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+      } catch (e) {
+        console.warn('Web Audio API недоступний:', e);
+      }
+    }
+
+    function toggleSound() {
+      isMuted = !isMuted;
+      try {
+        localStorage.setItem(STORAGE_KEY_MUTE, String(isMuted));
+      } catch (e) {}
+      updateSoundButtonUI();
+      if (!isMuted) {
+        initAudioContext();
+        playSound('valid');
+      }
+    }
+
+    function updateSoundButtonUI() {
+      const iconOn = document.getElementById('sound-icon-on');
+      const iconOff = document.getElementById('sound-icon-off');
+      const label = document.getElementById('sound-label');
+
+      if (isMuted) {
+        iconOn.classList.add('hidden');
+        iconOff.classList.remove('hidden');
+        if (label) label.textContent = 'Без звуку';
+      } else {
+        iconOn.classList.remove('hidden');
+        iconOff.classList.add('hidden');
+        if (label) label.textContent = 'Звук увімк.';
+      }
+    }
+
+    function playSound(type) {
+      if (isMuted || !audioCtx) return;
+
+      try {
+        const now = audioCtx.currentTime;
+
+        if (type === 'valid') {
+          // Приємний висхідний акорд (успішний вхід)
+          [523.25, 659.25, 783.99].forEach((freq, idx) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+            gain.gain.setValueAtTime(0.001, now + idx * 0.08);
+            gain.gain.exponentialRampToValueAtTime(0.18, now + idx * 0.08 + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.25);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now + idx * 0.08);
+            osc.stop(now + idx * 0.08 + 0.26);
+          });
+        } else if (type === 'warning') {
+          // Подвійний попереджувальний сигнал (вже зіскановано)
+          [440, 440].forEach((freq, idx) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + idx * 0.16);
+            gain.gain.setValueAtTime(0.001, now + idx * 0.16);
+            gain.gain.exponentialRampToValueAtTime(0.22, now + idx * 0.16 + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.16 + 0.12);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now + idx * 0.16);
+            osc.stop(now + idx * 0.16 + 0.13);
+          });
+        } else if (type === 'error') {
+          // Низький сигнал помилки (не знайдено)
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(190, now);
+          osc.frequency.linearRampToValueAtTime(140, now + 0.32);
+          gain.gain.setValueAtTime(0.001, now);
+          gain.gain.exponentialRampToValueAtTime(0.16, now + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now);
+          osc.stop(now + 0.35);
+        }
+      } catch (e) {
+        console.warn('Помилка відтворення звуку:', e);
+      }
+    }
+
+    // ==================== ДОПОМІЖНІ УТИЛІТИ ====================
+    function copyTextToClipboard(text, successMessage) {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showToast(successMessage, 'success');
+      } catch (err) {
+        console.error('Помилка копіювання:', err);
+        showToast('Не вдалося скопіювати текст', 'error');
+      }
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const colors = {
+        success: 'bg-emerald-900 text-white border-emerald-700',
+        warning: 'bg-amber-900 text-amber-50 border-amber-700',
+        error: 'bg-rose-900 text-white border-rose-700',
+        info: 'bg-slate-900 text-white border-slate-700'
+      };
+      const toast = document.createElement('div');
+      toast.className = `animate-pop-in rounded-xl px-4 py-3 text-xs sm:text-sm font-semibold shadow-xl border text-center mb-2 ${colors[type] || colors.info}`;
+      toast.textContent = message;
+      container.innerHTML = '';
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        if (toast.parentNode === container) {
+          container.removeChild(toast);
+        }
+      }, 2800);
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>

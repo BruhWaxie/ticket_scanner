@@ -1,0 +1,74 @@
+[
+  {
+    "uuid": "4a4de8a9-5c87-4073-a83f-74ad76598aaf",
+    "fullName": "Костерев Максим Антонович",
+    "school": "Львівський лінгвістичний ліцей",
+    "phone": "+380986155286",
+    "parentPermission": false,
+    "scanned": false
+  },
+  {
+    "uuid": "6d814158-870d-4378-a59a-5e1ed0b454ee",
+    "fullName": "Межирицька Наталія Тарасівна",
+    "school": "Львівська гімназія «Євшан»",
+    "phone": "+380633057144",
+    "parentPermission": true,
+    "scanned": false
+  },
+  {
+    "uuid": "c61f0604-86c9-49f0-ade2-23a46d649495",
+    "fullName": "Дубан Олена Назарівна",
+    "school": "Львівський лінгвістичний ліцей",
+    "phone": "+380980978169",
+    "parentPermission": false,
+    "scanned": false
+  },
+  {
+    "uuid": "1f422ca6-01ec-4fdb-97a6-97fb66650ac7",
+    "fullName": "Дунчак Софія Олександрівна",
+    "school": "Львівський лінгвістичний ліцей",
+    "phone": "+380634624626",
+    "parentPermission": false,
+    "scanned": false
+  },
+  {
+    "uuid": "727021ac-7bf7-401c-9a77-f34f08b209a1",
+    "fullName": "Качмар Лука Олексійович",
+    "school": "Львівський лінгвістичний ліцей",
+    "phone": "+380978916850",
+    "parentPermission": false,
+    "scanned": false
+  },
+  {
+    "uuid": "a9959ed7-2882-483f-b581-70f266185e6e",
+    "fullName": "яромир юдінцов валеріювис",
+    "school": "Львівський лінгвістичний ліцей",
+    "phone": "+380675877105",
+    "parentPermission": false,
+    "scanned": false
+  },
+  {
+    "uuid": "cf144221-1b51-47a0-9610-87bae040f14a",
+    "fullName": "Колодій Андріана Андріївна",
+    "school": "Львівський лінгвістичний ліцей",
+    "phone": "+380987780614",
+    "parentPermission": false,
+    "scanned": false
+  },
+  {
+    "uuid": "d1f8d58d-1005-4e23-b4d1-c43228b0426e",
+    "fullName": "Кузик Анна Петрівна",
+    "school": "Львівський лінгвістичний ліцей",
+    "phone": "+380994942926",
+    "parentPermission": false,
+    "scanned": false
+  },
+  {
+    "uuid": "286422d7-446e-4dce-93c5-411ff05a6c85",
+    "fullName": "Гандера Тая Миколаївна",
+    "school": "Львівський лінгвістичний ліцей",
+    "phone": "+380677967078",
+    "parentPermission": false,
+    "scanned": false
+  }
+]
