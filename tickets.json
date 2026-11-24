@@ -222,5 +222,37 @@
     "phone": "+380968000264",
     "parentPermission": false,
     "scanned": false
+  },
+  {
+    "uuid": "a35d5267-2a57-4d09-8262-8bd6a0bc91cb",
+    "fullName": "Гаврилів Юрій Романович",
+    "school": "КЛ \"Школа святої Софії\"",
+    "phone": "+380971246546",
+    "parentPermission": false,
+    "scanned": false
+  },
+  {
+    "uuid": "4ad71a96-c148-489e-9f0d-f444c87c4fca",
+    "fullName": "Варещук Анна Олегівна",
+    "school": "Львівський лінгвістичний ліцей",
+    "phone": "+380977750249",
+    "parentPermission": false,
+    "scanned": false
+  },
+  {
+    "uuid": "23356a6d-f89e-48ca-af42-d63927d004ff",
+    "fullName": "Варещук Катерина Олегівна",
+    "school": "Львівський лінгвістичний ліцей",
+    "phone": "+380967013052",
+    "parentPermission": false,
+    "scanned": false
+  },
+  {
+    "uuid": "d67caa07-9f40-48af-ba8a-7e2857a263b4",
+    "fullName": "Васюрина Катерина Петрівна",
+    "school": "Львівський лінгвістичний ліцей",
+    "phone": "+380676020002",
+    "parentPermission": false,
+    "scanned": false
   }
 ]
